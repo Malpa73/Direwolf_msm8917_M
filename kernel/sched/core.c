@@ -7937,10 +7937,7 @@ void __sched io_schedule(void)
 	atomic_inc(&rq->nr_iowait);
 	blk_flush_plug(current);
 	current->in_iowait = 1;
-	if (old_iowait)
-		blk_schedule_flush_plug(current);
-	else
-		blk_flush_plug(current);
+	blk_schedule_flush_plug(current);
 
 	delayacct_blkio_start();
 	atomic_inc(&rq->nr_iowait);
