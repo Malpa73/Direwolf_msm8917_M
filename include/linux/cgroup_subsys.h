@@ -39,6 +39,17 @@ SUBSYS(freezer)
 SUBSYS(net_cls)
 #endif
 
+<<<<<<< HEAD
+=======
+#if IS_ENABLED(CONFIG_BLK_CGROUP)
+SUBSYS(blkio)
+#endif
+
+#if IS_ENABLED(CONFIG_CGROUP_BFQIO)
+SUBSYS(bfqio)
+#endif
+
+>>>>>>> d6a9f41106d0... block: cgroups, kconfig, build bits for BFQ-v7r8-3.18.0
 #if IS_ENABLED(CONFIG_CGROUP_PERF)
 SUBSYS(perf_event)
 #endif
