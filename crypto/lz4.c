@@ -66,10 +66,8 @@ static void lz4_exit(struct crypto_tfm *tfm)
 static int __lz4_compress_crypto(const u8 *src, unsigned int slen,
 				 u8 *dst, unsigned int *dlen, void *ctx)
 {
-	size_t tmp_len = *dlen;
-	int err;
-
-	err = lz4_compress(src, slen, dst, &tmp_len, ctx);
+	int out_len = LZ4_compress_default(src, dst,
+		slen, *dlen, ctx);
 
 	if (!out_len)
 		return -EINVAL;
