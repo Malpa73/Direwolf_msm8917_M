@@ -59,10 +59,6 @@ static DEFINE_SPINLOCK(suspend_lock);
 
 #define TAG "msm_adreno_tz: "
 
-#if 1
-static unsigned int adrenoboost = 2; //Boost it for medium performance applications.
-#endif
-
 static u64 suspend_time;
 static u64 suspend_start;
 static unsigned long acc_total, acc_relative_busy;
@@ -80,7 +76,7 @@ static struct work_struct boost_work;
 static struct delayed_work unboost_work;
 static bool gpu_boost_running;
 
-static unsigned long boost_freq = 515000000;
+static unsigned long boost_freq = 598000000;
 module_param(boost_freq, ulong, 0644);
 
 static unsigned long boost_duration = 10;
@@ -103,31 +99,6 @@ u64 suspend_time_ms(void)
 	suspend_start = suspend_sampling_time;
 	return time_diff;
 }
-
-#if 1
-static ssize_t adrenoboost_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	size_t count = 0;
-	count += sprintf(buf, "%d\n", adrenoboost);
-
-	return count;
-}
-
-static ssize_t adrenoboost_save(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
-{
-	int input;
-	sscanf(buf, "%d ", &input);
-	if (input < 0 || input > 3) {
-		adrenoboost = 0;
-	} else {
-		adrenoboost = input;
-	}
-
-	return count;
-}
-#endif
 
 static ssize_t gpu_load_show(struct device *dev,
 		struct device_attribute *attr,
@@ -175,11 +146,6 @@ static ssize_t suspend_time_show(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "%llu\n", time_diff);
 }
 
-#if 1
-static DEVICE_ATTR(adrenoboost, 0644,
-		adrenoboost_show, adrenoboost_save);
-#endif
-
 static DEVICE_ATTR(gpu_load, 0444, gpu_load_show, NULL);
 
 static DEVICE_ATTR(suspend_time, 0444,
@@ -189,9 +155,6 @@ static DEVICE_ATTR(suspend_time, 0444,
 static const struct device_attribute *adreno_tz_attr_list[] = {
 		&dev_attr_gpu_load,
 		&dev_attr_suspend_time,
-#if 1
-		&dev_attr_adrenoboost,
-#endif
 		NULL
 };
 
@@ -423,16 +386,7 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq,
 
 	*freq = stats.current_frequency;
 	priv->bin.total_time += stats.total_time;
-#if 1
-	// scale busy time up based on adrenoboost parameter, only if MIN_BUSY exceeded...
-	if ((unsigned int)(priv->bin.busy_time + stats.busy_time) >= MIN_BUSY) {
-		priv->bin.busy_time += stats.busy_time * (1 + (adrenoboost*3)/2);
-	} else {
-		priv->bin.busy_time += stats.busy_time;
-	}
-#else
 	priv->bin.busy_time += stats.busy_time;
-#endif
 
 	if (stats.private_data)
 		context_count =  *((int *)stats.private_data);
