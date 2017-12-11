@@ -57,8 +57,6 @@ config IOSCHED_CFQ
 
 	  This is the default I/O scheduler.
 
-<<<<<<< HEAD
-=======
 config IOSCHED_FIOPS
 	tristate "IOPS based I/O scheduler"
 	default y
@@ -87,7 +85,6 @@ config IOSCHED_SIOPLUS
 	  basic merging, trying to keep a minimum overhead. It is aimed
 	  mainly for aleatory access devices (eg: flash devices).
 
->>>>>>> 82a5494... block: add sioplus, vr, tripndroid, fifo iosched
 config CFQ_GROUP_IOSCHED
 	bool "CFQ Group Scheduling support"
 	depends on IOSCHED_CFQ && BLK_CGROUP
