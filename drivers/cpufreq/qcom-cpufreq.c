@@ -255,6 +255,7 @@ static struct notifier_block __refdata msm_cpufreq_cpu_notifier = {
 };
 
 void msm_do_pm_boost(bool do_boost)
+
 {
 	struct cpufreq_policy policy;
 	unsigned long rate;
@@ -293,8 +294,11 @@ static void cpu_pm_unboost_worker(struct work_struct *work)
 }
 
 static int msm_cpufreq_suspend(void)
+
 {
-	int cpu = 0;
+	struct cpufreq_policy policy;
+	unsigned long rate;
+	int cpu;
 
 	suspended_once = true;
 	cancel_delayed_work_sync(&pm_unboost_work);
