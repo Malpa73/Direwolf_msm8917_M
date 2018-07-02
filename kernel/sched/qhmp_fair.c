@@ -2776,7 +2776,7 @@ static inline u64 cpu_load_sync(int cpu, int sync)
 	 * we may want to discount the load of the currently running
 	 * task.
 	 */
-	if (sync && cpu == smp_processor_id()) {
+	if (sync && cpu == raw_smp_processor_id()) {
 		if (load > rq->curr->ravg.demand)
 			load -= rq->curr->ravg.demand;
 		else
@@ -2818,7 +2818,7 @@ static int mostly_idle_cpu_sync(int cpu, u64 load, int sync)
 	 * Sync wakeups mean that the waker task will go to sleep
 	 * soon so we should discount its load from this test.
 	 */
-	if (sync && cpu == smp_processor_id())
+	if (sync && cpu == raw_smp_processor_id())
 		nr_running--;
 
 	return load <= rq->mostly_idle_load &&
@@ -3406,7 +3406,7 @@ static int select_best_cpu(struct task_struct *p, int target, int reason,
 		 * prefer_idle is set. Otherwise if prefer_idle is unset sync
 		 * wakeups will get biased away from the waker CPU.
 		 */
-		if (idle_cpu(i) || (sync && i == smp_processor_id()
+		if (idle_cpu(i) || (sync && i == raw_smp_processor_id()
 			&& prefer_idle && cpu_rq(i)->nr_running == 1)) {
 			cstate = cpu_rq(i)->cstate;
 
@@ -5399,7 +5399,7 @@ void __refill_cfs_bandwidth_runtime(struct cfs_bandwidth *cfs_b)
 	if (cfs_b->quota == RUNTIME_INF)
 		return;
 
-	now = sched_clock_cpu(smp_processor_id());
+	now = sched_clock_cpu(raw_smp_processor_id());
 	cfs_b->runtime = cfs_b->quota;
 	cfs_b->runtime_expires = now + ktime_to_ns(cfs_b->period);
 }
@@ -6578,7 +6578,7 @@ static int wake_affine(struct sched_domain *sd, struct task_struct *p, int sync)
 		return 0;
 
 	idx	  = sd->wake_idx;
-	this_cpu  = smp_processor_id();
+	this_cpu  = raw_smp_processor_id();
 	prev_cpu  = task_cpu(p);
 	load	  = source_load(prev_cpu, idx);
 	this_load = target_load(this_cpu, idx);
@@ -6807,7 +6807,7 @@ static int
 select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_flags)
 {
 	struct sched_domain *tmp, *affine_sd = NULL, *sd = NULL;
-	int cpu = smp_processor_id();
+	int cpu = raw_smp_processor_id();
 	int new_cpu = cpu;
 	int want_affine = 0;
 	int sync = wake_flags & WF_SYNC;
@@ -9654,7 +9654,7 @@ static int active_load_balance_cpu_stop(void *data)
 	per_cpu(dbs_boost_load_moved, target_cpu) = 0;
 
 	/* make sure the requested cpu hasn't gone down in the meantime */
-	if (unlikely(busiest_cpu != smp_processor_id() ||
+	if (unlikely(busiest_cpu != raw_smp_processor_id() ||
 		     !busiest_rq->active_balance))
 		goto out_unlock;
 
@@ -9826,7 +9826,7 @@ static inline void nohz_balance_exit_idle(int cpu)
 static inline void set_cpu_sd_state_busy(void)
 {
 	struct sched_domain *sd;
-	int cpu = smp_processor_id();
+	int cpu = raw_smp_processor_id();
 
 	rcu_read_lock();
 	sd = rcu_dereference(per_cpu(sd_busy, cpu));
@@ -9843,7 +9843,7 @@ unlock:
 void set_cpu_sd_state_idle(void)
 {
 	struct sched_domain *sd;
-	int cpu = smp_processor_id();
+	int cpu = raw_smp_processor_id();
 
 	rcu_read_lock();
 	sd = rcu_dereference(per_cpu(sd_busy, cpu));
@@ -9888,7 +9888,7 @@ static int sched_ilb_notifier(struct notifier_block *nfb,
 {
 	switch (action & ~CPU_TASKS_FROZEN) {
 	case CPU_DYING:
-		nohz_balance_exit_idle(smp_processor_id());
+		nohz_balance_exit_idle(raw_smp_processor_id());
 		return NOTIFY_OK;
 	default:
 		return NOTIFY_DONE;
@@ -10295,7 +10295,7 @@ static void task_fork_fair(struct task_struct *p)
 {
 	struct cfs_rq *cfs_rq;
 	struct sched_entity *se = &p->se, *curr;
-	int this_cpu = smp_processor_id();
+	int this_cpu = raw_smp_processor_id();
 	struct rq *rq = this_rq();
 	unsigned long flags;
 

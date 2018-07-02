@@ -361,7 +361,7 @@ int set_l2_mode(struct low_power_ops *ops, int mode,
 	int rc = 0;
 	bool notify_rpm = level->notify_rpm;
 	struct low_power_ops *cpu_ops = per_cpu(cpu_cluster,
-			smp_processor_id())->lpm_dev;
+			raw_smp_processor_id())->lpm_dev;
 
 	if (cpu_ops->tz_flag & MSM_SCM_L2_OFF ||
 			cpu_ops->tz_flag & MSM_SCM_L2_GDHS)
@@ -410,7 +410,7 @@ int set_l3_mode(struct low_power_ops *ops, int mode,
 {
 	bool notify_rpm = level->notify_rpm;
 	struct low_power_ops *cpu_ops = per_cpu(cpu_cluster,
-			smp_processor_id())->lpm_dev;
+			raw_smp_processor_id())->lpm_dev;
 
 	switch (mode) {
 	case MSM_SPM_MODE_STANDALONE_POWER_COLLAPSE:
@@ -1042,7 +1042,7 @@ static int lpm_cpuidle_enter(struct cpuidle_device *dev,
 		return -EINVAL;
 
 	pwr_params = &cluster->cpu->levels[idx].pwr;
-	sched_set_cpu_cstate(smp_processor_id(), idx + 1,
+	sched_set_cpu_cstate(raw_smp_processor_id(), idx + 1,
 		pwr_params->energy_overhead, pwr_params->latency_us);
 
 	cpu_prepare(cluster, idx, true);
@@ -1083,7 +1083,7 @@ exit:
 	cluster_unprepare(cluster, cpumask, idx, true, end_time);
 	cpu_unprepare(cluster, idx, true);
 
-	sched_set_cpu_cstate(smp_processor_id(), 0, 0, 0);
+	sched_set_cpu_cstate(raw_smp_processor_id(), 0, 0, 0);
 	trace_cpu_idle_exit(idx, success);
 	end_time = ktime_to_ns(ktime_get()) - start_time;
 	dev->last_residency = do_div(end_time, 1000);
