@@ -118,19 +118,11 @@ static void __init zone_sizes_init(unsigned long min, unsigned long max)
 
 int pfn_valid(unsigned long pfn)
 {
-<<<<<<< HEAD
-
-=======
->>>>>>> 90f7545e79ab5c89a4012891bfb0906a9f41d8a3
 	phys_addr_t addr = pfn << PAGE_SHIFT;
 
 	if ((addr >> PAGE_SHIFT) != pfn)
 		return 0;
 	return memblock_is_memory(addr);
-<<<<<<< HEAD
-
-=======
->>>>>>> 90f7545e79ab5c89a4012891bfb0906a9f41d8a3
 }
 EXPORT_SYMBOL(pfn_valid);
 #endif
