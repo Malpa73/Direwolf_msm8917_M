@@ -20,6 +20,18 @@
 #include "kgsl_device.h"
 #include "kgsl_trace.h"
 
+/**
+* struct kgsl_midframe_info - midframe power stats sampling info
+* @timer - midframe sampling timer
+* @timer_check_ws - Updates powerstats on midframe expiry
+* @device - pointer to kgsl_device
+*/
+static struct kgsl_midframe_info {
+	struct hrtimer timer;
+	struct work_struct timer_check_ws;
+	struct kgsl_device *device;
+} *kgsl_midframe = NULL;
+
 static void do_devfreq_suspend(struct work_struct *work);
 static void do_devfreq_resume(struct work_struct *work);
 static void do_devfreq_notify(struct work_struct *work);
