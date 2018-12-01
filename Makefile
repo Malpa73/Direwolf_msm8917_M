@@ -628,6 +628,7 @@ else
 
 # These warnings generated too much noise in a regular build.
 # Use make W=1 to enable them (see scripts/Makefile.build)
+KBUILD_CFLAGS += $(call cc-disable-warning, unused-variable) 
 KBUILD_CFLAGS += $(call cc-disable-warning, unused-but-set-variable)
 endif
 KBUILD_CFLAGS += $(call cc-disable-warning, unused-const-variable)
@@ -735,6 +736,10 @@ ifdef CONFIG_KCOV
     CFLAGS_KCOV =
   endif
 endif
+
+# Disable -Wmisleading-indentation, kernel developers should
+# be that experienced to know how and when to use statement indentations.
+KBUILD_CFLAGS += $(call cc-disable-warning, misleading-indentation)
 
 ifdef CONFIG_FRAME_POINTER
 KBUILD_CFLAGS	+= -fno-omit-frame-pointer -fno-optimize-sibling-calls
