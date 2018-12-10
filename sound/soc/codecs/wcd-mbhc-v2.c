@@ -713,35 +713,27 @@ static void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 			(!is_pa_on)) {
 				mbhc->mbhc_cb->compute_impedance(mbhc,
 						&mbhc->zl, &mbhc->zr);
-			pr_debug("%s: RL %d ohm, RR %d ohm\n", __func__, mbhc->zl, mbhc->zr);
-
 			/* ASUS_BSP Eric +++*/
 			g_ZL = mbhc->zl;
 			g_ZR = mbhc->zr;
 			printk("wcd_mbhc_v2 : print hs_imp_val : LL = %d , RR = %d\n",g_ZL, g_ZR);
 			/* ASUS_BSP Eric ---*/
 
-			if (g_enable_headset_compatible) {
-				/*when use compatible, do not check 3 pole lineout type*/
-			} else {
-				if ((mbhc->zl > mbhc->mbhc_cfg->linein_th &&
-					mbhc->zl < MAX_IMPED) &&
-					(mbhc->zr > mbhc->mbhc_cfg->linein_th &&
-					 mbhc->zr < MAX_IMPED) &&
-					(jack_type == SND_JACK_HEADPHONE)) {
-					jack_type = SND_JACK_LINEOUT;
-					mbhc->current_plug = MBHC_PLUG_TYPE_HIGH_HPH;
-					if (mbhc->hph_status) {
-						mbhc->hph_status &= ~(SND_JACK_HEADSET |
-								SND_JACK_LINEOUT |
-								SND_JACK_UNSUPPORTED);
-						wcd_mbhc_jack_report(mbhc,
-								&mbhc->headset_jack,
-								mbhc->hph_status,
-								WCD_MBHC_JACK_MASK);
-					}
-					pr_debug("%s: Marking jack type as SND_JACK_LINEOUT\n",
-					__func__);
+			if ((mbhc->zl > mbhc->mbhc_cfg->linein_th &&
+				mbhc->zl < MAX_IMPED) &&
+				(mbhc->zr > mbhc->mbhc_cfg->linein_th &&
+				 mbhc->zr < MAX_IMPED) &&
+				(jack_type == SND_JACK_HEADPHONE)) {
+				jack_type = SND_JACK_LINEOUT;
+				mbhc->current_plug = MBHC_PLUG_TYPE_HIGH_HPH;
+				if (mbhc->hph_status) {
+					mbhc->hph_status &= ~(SND_JACK_HEADSET |
+							SND_JACK_LINEOUT |
+							SND_JACK_UNSUPPORTED);
+					wcd_mbhc_jack_report(mbhc,
+							&mbhc->headset_jack,
+							mbhc->hph_status,
+							WCD_MBHC_JACK_MASK);
 				}
 				pr_debug("%s: Marking jack type as SND_JACK_LINEOUT\n",
 				__func__);
