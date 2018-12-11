@@ -1,7 +1,7 @@
 /*
  * MSM Hotplug Driver
  *
- * Copyright (c) 2013-2015, Pranav Vashi <neobuddy89@gmail.com>
+ * Copyright (c) 2013-2016, Pranav Vashi <neobuddy89@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -19,8 +19,8 @@
 #include <linux/device.h>
 #include <linux/slab.h>
 #include <linux/cpufreq.h>
-#ifdef CONFIG_STATE_NOTIFIER
-#include <linux/state_notifier.h>
+#ifdef CONFIG_POWERSUSPEND
+#include <linux/powersuspend.h>
 #endif
 #include <linux/mutex.h>
 #include <linux/input.h>
@@ -30,11 +30,11 @@
 
 #define MSM_HOTPLUG			"msm_hotplug"
 #define HOTPLUG_ENABLED			0
-#define DEFAULT_UPDATE_RATE		HZ / 10
-#define START_DELAY			HZ * 20
+#define DEFAULT_UPDATE_RATE		100
+#define START_DELAY			20000
 #define MIN_INPUT_INTERVAL		150 * 1000L
 #define DEFAULT_HISTORY_SIZE		10
-#define DEFAULT_DOWN_LOCK_DUR		1000
+#define DEFAULT_DOWN_LOCK_DUR		500
 #define DEFAULT_BOOST_LOCK_DUR		2500 * 1000L
 #define DEFAULT_NR_CPUS_BOOSTED		NR_CPUS / 2
 #define DEFAULT_MIN_CPUS_ONLINE		1
@@ -62,7 +62,7 @@ static struct cpu_hotplug {
 	unsigned int max_cpus_online;
 	unsigned int cpus_boosted;
 	unsigned int offline_load;
-	unsigned int down_lock_dur;
+	unsigned int lock_dur;
 	u64 boost_lock_dur;
 	u64 last_input;
 	unsigned int fast_lane_load;
@@ -79,7 +79,7 @@ static struct cpu_hotplug {
 	.max_cpus_online_res = DEFAULT_MAX_CPUS_ONLINE,
 	.max_cpus_online_susp = DEFAULT_MAX_CPUS_ONLINE_SUSP,
 	.cpus_boosted = DEFAULT_NR_CPUS_BOOSTED,
-	.down_lock_dur = DEFAULT_DOWN_LOCK_DUR,
+	.lock_dur = DEFAULT_DOWN_LOCK_DUR,
 	.boost_lock_dur = DEFAULT_BOOST_LOCK_DUR,
 	.fast_lane_load = DEFAULT_FAST_LANE_LOAD
 };
@@ -111,12 +111,12 @@ static struct cpu_stats {
 	.total_cpus = NR_CPUS
 };
 
-struct down_lock {
+struct lock {
 	unsigned int locked;
 	struct delayed_work lock_rem;
 };
 
-static DEFINE_PER_CPU(struct down_lock, lock_info);
+static DEFINE_PER_CPU(struct lock, lock_info);
 
 struct cpu_load_data {
 	u64 prev_cpu_idle;
@@ -131,6 +131,7 @@ struct cpu_load_data {
 static DEFINE_PER_CPU(struct cpu_load_data, cpuload);
 
 static bool io_is_busy;
+bool fast_lane_mode;
 
 static int update_average_load(unsigned int cpu)
 {
@@ -250,25 +251,31 @@ static struct loads_tbl loads[] = {
 	LOAD_SCALE(0, 0),
 };
 
-static void apply_down_lock(unsigned int cpu)
+static void __ref cpu_up_lock(unsigned int cpu)
 {
-	struct down_lock *dl = &per_cpu(lock_info, cpu);
+	struct lock *dl = &per_cpu(lock_info, cpu);
 
+
+	cancel_delayed_work_sync(&dl->lock_rem);
 	dl->locked = 1;
+
+	if (!cpu_online(cpu))
+		cpu_up(cpu);
+
 	queue_delayed_work_on(0, hotplug_wq, &dl->lock_rem,
-			      msecs_to_jiffies(hotplug.down_lock_dur));
+			      msecs_to_jiffies(hotplug.lock_dur));
 }
 
-static void remove_down_lock(struct work_struct *work)
+static void remove_lock(struct work_struct *work)
 {
-	struct down_lock *dl = container_of(work, struct down_lock,
+	struct lock *dl = container_of(work, struct lock,
 					    lock_rem.work);
 	dl->locked = 0;
 }
 
-static int check_down_lock(unsigned int cpu)
+static int check_lock(unsigned int cpu)
 {
-	struct down_lock *dl = &per_cpu(lock_info, cpu);
+	struct lock *dl = &per_cpu(lock_info, cpu);
 
 	return dl->locked;
 }
@@ -282,8 +289,6 @@ static int get_lowest_load_cpu(void)
 	struct cpu_load_data *pcpu;
 
 	for_each_online_cpu(cpu) {
-		if (cpu == 0)
-			continue;
 		pcpu = &per_cpu(cpuload, cpu);
 		cpu_load[cpu] = pcpu->cur_load_maxfreq;
 		if (cpu_load[cpu] < lowest_load) {
@@ -302,20 +307,19 @@ static int get_lowest_load_cpu(void)
 	return lowest_cpu;
 }
 
-static void __ref cpu_up_work(struct work_struct *work)
+static void cpu_up_work(struct work_struct *work)
 {
 	int cpu;
 	unsigned int target;
 
 	target = hotplug.target_cpus;
 
-	for_each_cpu_not(cpu, cpu_online_mask) {
-		if (target <= num_online_cpus())
-			break;
+	for_each_possible_cpu(cpu) {
 		if (cpu == 0)
 			continue;
-		cpu_up(cpu);
-		apply_down_lock(cpu);
+		if (target <= num_online_cpus())
+			break;
+		cpu_up_lock(cpu);
 	}
 }
 
@@ -331,7 +335,7 @@ static void cpu_down_work(struct work_struct *work)
 			continue;
 		lowest_cpu = get_lowest_load_cpu();
 		if (lowest_cpu > 0 && lowest_cpu <= stats.total_cpus) {
-			if (check_down_lock(lowest_cpu))
+			if (check_lock(lowest_cpu))
 				break;
 			cpu_down(lowest_cpu);
 		}
@@ -424,8 +428,11 @@ static void msm_hotplug_work(struct work_struct *work)
 
 	if (stats.cur_max_load >= hotplug.fast_lane_load) {
 		/* Enter the fast lane */
+		fast_lane_mode = true;
 		online_cpu(hotplug.max_cpus_online);
 		goto reschedule;
+	} else {
+		fast_lane_mode = false;
 	}
 
 	/* If number of cpus locked, break out early */
@@ -465,7 +472,7 @@ reschedule:
 	reschedule_hotplug_work();
 }
 
-#ifdef CONFIG_STATE_NOTIFIER
+#ifdef CONFIG_POWERSUSPEND
 static void msm_hotplug_suspend(void)
 {
 	int cpu;
@@ -486,15 +493,15 @@ static void msm_hotplug_suspend(void)
 	flush_workqueue(hotplug_wq);
 	cancel_delayed_work_sync(&hotplug_work);
 
+	fast_lane_mode = false;
+
 	/* Put all sibling cores to sleep */
-	for_each_online_cpu(cpu) {
-		if (cpu == 0)
-			continue;
-		cpu_down(cpu);
-	}
+	for_each_possible_cpu(cpu)
+		if (cpu != 0 && cpu_online(cpu))
+			cpu_down(cpu);
 }
 
-static void __ref msm_hotplug_resume(void)
+static void msm_hotplug_resume(void)
 {
 	int cpu, required_reschedule = 0, required_wakeup = 0;
 
@@ -514,11 +521,10 @@ static void __ref msm_hotplug_resume(void)
 
 	if (required_wakeup) {
 		/* Fire up all CPUs */
-		for_each_cpu_not(cpu, cpu_online_mask) {
+		for_each_possible_cpu(cpu) {
 			if (cpu == 0)
 				continue;
-			cpu_up(cpu);
-			apply_down_lock(cpu);
+			cpu_up_lock(cpu);
 		}
 	}
 
@@ -527,25 +533,27 @@ static void __ref msm_hotplug_resume(void)
 		reschedule_hotplug_work();
 }
 
-static int state_notifier_callback(struct notifier_block *this,
-				unsigned long event, void *data)
+static void __ref msm_hp_suspend(struct power_suspend *handler)
 {
 	if (!hotplug.msm_enabled)
-		return NOTIFY_OK;
+		return;
 
-	switch (event) {
-		case STATE_NOTIFIER_ACTIVE:
-			msm_hotplug_resume();
-			break;
-		case STATE_NOTIFIER_SUSPEND:
-			msm_hotplug_suspend();
-			break;
-		default:
-			break;
-	}
+	msm_hotplug_suspend();
 
-	return NOTIFY_OK;
 }
+
+static void __ref msm_hp_resume(struct power_suspend *handler)
+{
+	if (!hotplug.msm_enabled)
+		return;
+	
+	msm_hotplug_resume();
+}
+
+static struct power_suspend msm_hotplug_power_suspend_driver = {
+	.suspend = msm_hp_suspend,
+	.resume = msm_hp_resume,
+};
 #endif
 
 static void hotplug_input_event(struct input_handle *handle, unsigned int type,
@@ -639,10 +647,10 @@ static struct input_handler hotplug_input_handler = {
 	.id_table	= hotplug_ids,
 };
 
-static int __ref msm_hotplug_start(void)
+static int msm_hotplug_start(void)
 {
 	int cpu, ret = 0;
-	struct down_lock *dl;
+	struct lock *dl;
 
 	hotplug_wq =
 	    alloc_workqueue("msm_hotplug_wq", WQ_HIGHPRI | WQ_FREEZABLE, 0);
@@ -653,13 +661,8 @@ static int __ref msm_hotplug_start(void)
 		goto err_out;
 	}
 
-#ifdef CONFIG_STATE_NOTIFIER
-	hotplug.notif.notifier_call = state_notifier_callback;
-	if (state_register_client(&hotplug.notif)) {
-		pr_err("%s: Failed to register State notifier callback\n",
-			MSM_HOTPLUG);
-		goto err_dev;
-	}
+#ifdef CONFIG_POWERSUSPEND
+	register_power_suspend(&msm_hotplug_power_suspend_driver);
 #endif
 
 	ret = input_register_handler(&hotplug_input_handler);
@@ -684,19 +687,17 @@ static int __ref msm_hotplug_start(void)
 	INIT_WORK(&hotplug.down_work, cpu_down_work);
 	for_each_possible_cpu(cpu) {
 		dl = &per_cpu(lock_info, cpu);
-		INIT_DELAYED_WORK(&dl->lock_rem, remove_down_lock);
+		INIT_DELAYED_WORK(&dl->lock_rem, remove_lock);
 	}
 
-	/* Fire up all CPUs */
-	for_each_cpu_not(cpu, cpu_online_mask) {
+	for_each_possible_cpu(cpu) {
 		if (cpu == 0)
 			continue;
-		cpu_up(cpu);
-		apply_down_lock(cpu);
+		cpu_up_lock(cpu);
 	}
 
 	queue_delayed_work_on(0, hotplug_wq, &hotplug_work,
-			      START_DELAY);
+			      msecs_to_jiffies(START_DELAY));
 
 	return ret;
 err_dev:
@@ -706,10 +707,10 @@ err_out:
 	return ret;
 }
 
-static void msm_hotplug_stop(void)
+static void __ref msm_hotplug_stop(void)
 {
 	int cpu;
-	struct down_lock *dl;
+	struct lock *dl;
 
 	flush_workqueue(hotplug_wq);
 	for_each_possible_cpu(cpu) {
@@ -724,20 +725,20 @@ static void msm_hotplug_stop(void)
 	mutex_destroy(&stats.stats_mutex);
 	kfree(stats.load_hist);
 
-#ifdef CONFIG_STATE_NOTIFIER
-	state_unregister_client(&hotplug.notif);
+#ifdef CONFIG_POWERSUSPEND
+	unregister_power_suspend(&msm_hotplug_power_suspend_driver);
 #endif
 	hotplug.notif.notifier_call = NULL;
 	input_unregister_handler(&hotplug_input_handler);
 
 	destroy_workqueue(hotplug_wq);
 
-	/* Put all sibling cores to sleep */
-	for_each_online_cpu(cpu) {
-		if (cpu == 0)
-			continue;
-		cpu_down(cpu);
-	}
+	fast_lane_mode = false;
+
+	/* Wake up all the sibling cores */
+	for_each_possible_cpu(cpu)
+		if (!cpu_online(cpu))
+			cpu_up(cpu);
 }
 
 static unsigned int *get_tokenized_data(const char *buf, int *num_tokens)
@@ -818,14 +819,14 @@ static ssize_t store_enable_hotplug(struct device *dev,
 	return count;
 }
 
-static ssize_t show_down_lock_duration(struct device *dev,
+static ssize_t show_lock_duration(struct device *dev,
 				       struct device_attribute
 				       *msm_hotplug_attrs, char *buf)
 {
-	return sprintf(buf, "%u\n", hotplug.down_lock_dur);
+	return sprintf(buf, "%u\n", hotplug.lock_dur);
 }
 
-static ssize_t store_down_lock_duration(struct device *dev,
+static ssize_t store_lock_duration(struct device *dev,
 					struct device_attribute
 					*msm_hotplug_attrs, const char *buf,
 					size_t count)
@@ -837,7 +838,7 @@ static ssize_t store_down_lock_duration(struct device *dev,
 	if (ret != 1)
 		return -EINVAL;
 
-	hotplug.down_lock_dur = val;
+	hotplug.lock_dur = val;
 
 	return count;
 }
@@ -1115,29 +1116,29 @@ static ssize_t show_current_load(struct device *dev,
 	return sprintf(buf, "%u\n", stats.cur_avg_load);
 }
 
-static DEVICE_ATTR(msm_enabled, 0660, show_enable_hotplug, store_enable_hotplug);
-static DEVICE_ATTR(down_lock_duration, 0660, show_down_lock_duration,
-		   store_down_lock_duration);
-static DEVICE_ATTR(boost_lock_duration, 0660, show_boost_lock_duration,
+static DEVICE_ATTR(msm_enabled, 0644, show_enable_hotplug, store_enable_hotplug);
+static DEVICE_ATTR(lock_duration, 0644, show_lock_duration,
+		   store_lock_duration);
+static DEVICE_ATTR(boost_lock_duration, 0644, show_boost_lock_duration,
 		   store_boost_lock_duration);
-static DEVICE_ATTR(update_rates, 0660, show_update_rates, store_update_rates);
-static DEVICE_ATTR(load_levels, 0660, show_load_levels, store_load_levels);
-static DEVICE_ATTR(min_cpus_online, 0660, show_min_cpus_online,
+static DEVICE_ATTR(update_rates, 0644, show_update_rates, store_update_rates);
+static DEVICE_ATTR(load_levels, 0644, show_load_levels, store_load_levels);
+static DEVICE_ATTR(min_cpus_online, 0644, show_min_cpus_online,
 		   store_min_cpus_online);
-static DEVICE_ATTR(max_cpus_online, 0660, show_max_cpus_online,
+static DEVICE_ATTR(max_cpus_online, 0644, show_max_cpus_online,
 		   store_max_cpus_online);
-static DEVICE_ATTR(max_cpus_online_susp, 0660, show_max_cpus_online_susp,
+static DEVICE_ATTR(max_cpus_online_susp, 0644, show_max_cpus_online_susp,
 		   store_max_cpus_online_susp);
-static DEVICE_ATTR(cpus_boosted, 0660, show_cpus_boosted, store_cpus_boosted);
-static DEVICE_ATTR(offline_load, 0660, show_offline_load, store_offline_load);
-static DEVICE_ATTR(fast_lane_load, 0660, show_fast_lane_load,
+static DEVICE_ATTR(cpus_boosted, 0644, show_cpus_boosted, store_cpus_boosted);
+static DEVICE_ATTR(offline_load, 0644, show_offline_load, store_offline_load);
+static DEVICE_ATTR(fast_lane_load, 0644, show_fast_lane_load,
 		   store_fast_lane_load);
-static DEVICE_ATTR(io_is_busy, 0660, show_io_is_busy, store_io_is_busy);
-static DEVICE_ATTR(current_load, 0660, show_current_load, NULL);
+static DEVICE_ATTR(io_is_busy, 0644, show_io_is_busy, store_io_is_busy);
+static DEVICE_ATTR(current_load, 0444, show_current_load, NULL);
 
 static struct attribute *msm_hotplug_attrs[] = {
 	&dev_attr_msm_enabled.attr,
-	&dev_attr_down_lock_duration.attr,
+	&dev_attr_lock_duration.attr,
 	&dev_attr_boost_lock_duration.attr,
 	&dev_attr_update_rates.attr,
 	&dev_attr_load_levels.attr,
