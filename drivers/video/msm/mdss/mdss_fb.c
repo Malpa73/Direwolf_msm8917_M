@@ -3731,11 +3731,7 @@ static int __mdss_fb_display_thread(void *data)
 				mfd->index);
 
 	while (1) {
-<<<<<<< HEAD
-		ret = wait_event_interruptible(mfd->commit_wait_q,
-=======
 		wait_event_interruptible(mfd->commit_wait_q,
->>>>>>> 06f38b485440... msm: mdss: convert threads to interruptible
 				(atomic_read(&mfd->commits_pending) ||
 				 kthread_should_stop()));
 
