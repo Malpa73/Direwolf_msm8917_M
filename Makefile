@@ -419,9 +419,6 @@ KBUILD_CFLAGS   := -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common \
 		   -Werror-implicit-function-declaration \
 		   -Wno-misleading-indentation \
-                   -Wno-switch-unreachable \
-                   -Wno-stringop-overflow \
-                   -Wno-memset-elt-size \
 		   -Wno-format-security \
 		   -std=gnu89
 
