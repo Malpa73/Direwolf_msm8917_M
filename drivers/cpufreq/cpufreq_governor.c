@@ -136,8 +136,9 @@ void dbs_check_cpu(struct dbs_data *dbs_data, int cpu)
 		 * an unusually large 'wall_time' (as compared to the sampling
 		 * rate) indicates this scenario.
 		 */
-		if (unlikely(wall_time > (2 * sampling_rate)) &&
+ 		if (unlikely(wall_time > (2 * sampling_rate)) &&
 						j_cdbs->copy_prev_load) {
+			unsigned int periods = wall_time / sampling_rate;
 			load = j_cdbs->prev_load;
 			j_cdbs->copy_prev_load = false;
 		} else {
